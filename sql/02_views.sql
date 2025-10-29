@@ -1,5 +1,4 @@
-
--- Date helpers
+﻿-- Date helpers
 CREATE OR REPLACE VIEW ecommerce.v_dates AS
 SELECT
   d::date AS d,
@@ -95,19 +94,31 @@ GROUP BY 1;
 
 -- Top products & categories monthly (rolling 3m)
 CREATE OR REPLACE VIEW ecommerce.v_top_products AS
+WITH per_product_month AS (
+  SELECT
+    date_trunc('month', o.order_ts)::date AS order_month,
+    oi.product_id,
+    p.category,
+    SUM(oi.qty * oi.unit_price) AS revenue,
+    SUM(oi.qty * (oi.unit_price - oi.unit_cost)) AS margin
+  FROM ecommerce.order_items oi
+  JOIN ecommerce.orders o  USING (order_id)
+  JOIN ecommerce.products p USING (product_id)
+  WHERE o.status = 'paid'
+  GROUP BY 1,2,3
+)
 SELECT
   order_month,
   product_id,
   category,
-  SUM(revenue) AS revenue,
-  SUM(margin)  AS margin,
-  AVG(SUM(revenue)) OVER (
+  revenue,
+  margin,
+  AVG(revenue) OVER (
     PARTITION BY product_id
     ORDER BY order_month
     ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
   ) AS rev_rolling_3m
-FROM ecommerce.v_order_items_enriched
-GROUP BY 1,2,3;
+FROM per_product_month;
 
 -- Simple anomaly score (Z-score on monthly revenue)
 CREATE OR REPLACE VIEW ecommerce.v_anomaly AS
